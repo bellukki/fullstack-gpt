@@ -2,3 +2,7 @@ env/
 .env
 assignment/
 lecture/
+prompt.json
+model.json
+prompt.yaml
+cache.db
