@@ -6,3 +6,4 @@ prompt.json
 model.json
 prompt.yaml
 cache.db
+.cache/
