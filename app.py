@@ -59,13 +59,13 @@ if api_key:
         return_messages=True,
     )
 else:
-    st.warning("Please enter your OpenAI API Key")
+    st.warning("Please enter your OpenAI API Key first!!")
 
 
 @st.cache_resource(show_spinner="Embedding file...")
 def embed_file(file):
     file_content = file.read()
-    files_dir = Path
+    files_dir = Path("./.cache/files")
     os.makedirs(files_dir, exist_ok=True)
     file_path = files_dir / file.name
     with open(file_path, "wb") as f:
