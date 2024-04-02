@@ -6,7 +6,6 @@ prompt.json
 model.json
 prompt.yaml
 cache.db
-.cache/
 pages/
 Home.py
 notebook.ipynb
