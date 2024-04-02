@@ -2,8 +2,9 @@ import streamlit as st
 import os
 from pathlib import Path
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.document_loaders import UnstructuredFileLoader
-from langchain.embeddings import CacheBackedEmbeddings, OpenAIEmbeddings
+from langchain_community.document_loaders import UnstructuredFileLoader
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain.embeddings import CacheBackedEmbeddings
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.storage import LocalFileStore
 from langchain.text_splitter import CharacterTextSplitter
