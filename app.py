@@ -80,7 +80,7 @@ def embed_file(file):
     )
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
-    embeddings = OpenAIEmbeddings()
+    embeddings = OpenAIEmbeddings(api_key=api_key)
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
         embeddings, cache_dir
     )
