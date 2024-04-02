@@ -1,6 +1,6 @@
 env/
 .env
-assignment/
+assignment/archive
 lecture/
 prompt.json
 model.json

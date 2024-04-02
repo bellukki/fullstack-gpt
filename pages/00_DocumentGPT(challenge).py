@@ -9,9 +9,6 @@ from langchain.vectorstores.faiss import FAISS
 from langchain_openai import ChatOpenAI
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.memory import ConversationSummaryBufferMemory
-from dotenv import load_dotenv
-
-load_dotenv()
 
 st.set_page_config(
     page_title="DocumentGPT",
@@ -33,26 +30,34 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message_box.markdown(self.message)
 
 
-llm = ChatOpenAI(
-    model_name="gpt-3.5-turbo",
-    temperature=0.1,
-    streaming=True,
-    callbacks=[
-        ChatCallbackHandler(),
-    ]
-)
+api_key = st.sidebar.text_input(
+    "put your OpenAI API Key here", type="password")
 
-memory_llm = ChatOpenAI(
-    model_name="gpt-3.5-turbo",
-    temperature=0.1,
-)
+memory_llm = None
 
-memory = ConversationSummaryBufferMemory(
-    llm=memory_llm,
-    max_token_limit=120,
-    memory_key="chat_history",
-    return_messages=True,
-)
+if api_key:
+    llm = ChatOpenAI(
+        model_name="gpt-3.5-turbo",
+        temperature=0.1,
+        api_key=api_key,
+        streaming=True,
+        callbacks=[
+            ChatCallbackHandler(),
+        ]
+    )
+    memory_llm = ChatOpenAI(
+        model_name="gpt-3.5-turbo",
+        temperature=0.1,
+        api_key=api_key,
+    )
+    memory = ConversationSummaryBufferMemory(
+        llm=memory_llm,
+        max_token_limit=120,
+        memory_key="chat_history",
+        return_messages=True,
+    )
+else:
+    st.warning("Please enter your OpenAI API Key")
 
 
 @st.cache_resource(show_spinner="Embedding file...")
