@@ -1,4 +1,6 @@
 import streamlit as st
+import os
+from pathlib import Path
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.embeddings import CacheBackedEmbeddings, OpenAIEmbeddings
@@ -63,10 +65,14 @@ else:
 @st.cache_resource(show_spinner="Embedding file...")
 def embed_file(file):
     file_content = file.read()
-    file_path = f"./.cache/files/{file.name}"
+    files_dir = Path
+    os.makedirs(files_dir, exist_ok=True)
+    file_path = files_dir / file.name
     with open(file_path, "wb") as f:
         f.write(file_content)
-    cache_dir = LocalFileStore(f"./.cache/embeddings/{file.name}")
+    embeddings_dir = Path("./.cache/embeddings")
+    os.makedirs(embeddings_dir, exist_ok=True)
+    cache_dir = LocalFileStore(str(embeddings_dir / file.name))
     splitter = CharacterTextSplitter.from_tiktoken_encoder(
         separator="\n",
         chunk_size=600,
