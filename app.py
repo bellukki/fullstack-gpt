@@ -163,7 +163,7 @@ with st.sidebar:
     file = st.file_uploader("Upload a .txt .pdf or .docx file", type=[
                             "pdf", "txt", "docx"])
 
-if file:
+if file and api_key:
     retriever = embed_file(file)
     send_message("I'm ready! Ask away!", "ai", save=False)
     restore_memory()
