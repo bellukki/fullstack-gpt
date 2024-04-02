@@ -1,9 +1,13 @@
 env/
 .env
-assignment/archive
+assignment/
 lecture/
 prompt.json
 model.json
 prompt.yaml
 cache.db
 .cache/
+pages/
+Home.py
+notebook.ipynb
+files/
