@@ -6,3 +6,7 @@ pages/
 Home.py
 notebook.ipynb
 files/
+.cache/private_embeddings
+.cache/private_files
+.cache/quiz_files
+falcon.bin

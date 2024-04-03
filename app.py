@@ -34,7 +34,7 @@ class ChatCallbackHandler(BaseCallbackHandler):
 
 
 api_key = st.sidebar.text_input(
-    "put your OpenAI API Key here", type="password")
+    "Put your OpenAI API Key here", type="password")
 
 memory_llm = None
 
@@ -160,6 +160,8 @@ st.markdown("""
             )
 
 with st.sidebar:
+    st.markdown(
+        "[📜Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)")
     file = st.file_uploader("Upload a .txt .pdf or .docx file", type=[
                             "pdf", "txt", "docx"])
 
