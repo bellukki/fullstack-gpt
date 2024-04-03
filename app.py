@@ -160,8 +160,11 @@ st.markdown("""
             )
 
 with st.sidebar:
-    st.markdown(
-        "[📜Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)")
+    st.markdown("""
+        [💻Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)  
+        [📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/master/app.py)
+                
+                """)
     file = st.file_uploader("Upload a .txt .pdf or .docx file", type=[
                             "pdf", "txt", "docx"])
 
