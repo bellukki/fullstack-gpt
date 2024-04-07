@@ -1,79 +1,145 @@
+import json
 import streamlit as st
 import os
 from pathlib import Path
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_community.retrievers import WikipediaRetriever
 from langchain_community.document_loaders import UnstructuredFileLoader
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain.embeddings import CacheBackedEmbeddings
-from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
-from langchain.storage import LocalFileStore
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.vectorstores.faiss import FAISS
 from langchain_openai import ChatOpenAI
-from langchain.callbacks.base import BaseCallbackHandler
-from langchain.memory import ConversationSummaryBufferMemory
+from langchain.prompts import ChatPromptTemplate
+from langchain.callbacks import StreamingStdOutCallbackHandler
 
-st.set_page_config(
-    page_title="DocumentGPT",
-    page_icon="📃"
+
+questions_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+    You are a helpful assistant that is role playing as a teacher.
+         
+    Based ONLY on the following context make 10 (TEN) questions to test the user's knowledge about the text.
+    
+    Each question should have 4 answers, three of them must be incorrect and one should be correct.
+         
+    Question examples:
+         
+    Question: What is the color of the ocean?
+    Answers: Red|Yellow|Green|Blue
+         
+    Question: What is the capital or Georgia?
+    Answers: Baku|Tbilisi|Manila|Beirut
+         
+    Question: When was Avatar released?
+    Answers: 2007|2001|2009|1998
+         
+    Question: Who was Julius Caesar?
+    Answers: A Roman Emperor|Painter|Actor|Model
+         
+    Your turn!
+         
+    Context: {context}
+                """
+        )
+    ]
 )
 
+function = {
+    "name": "create_quiz",
+    "description": "function that takes a list of questions and answers and returns a quiz",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "questions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                        },
+                        "answers": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "answer": {
+                                        "type": "string",
+                                    },
+                                    "correct": {
+                                        "type": "boolean",
+                                    },
+                                },
+                                "required": ["answer", "correct"],
+                            },
+                        },
+                    },
+                    "required": ["question", "answers"],
+                },
+            },
+        },
+        "required": ["questions"],
+    },
+}
 
-class ChatCallbackHandler(BaseCallbackHandler):
-    message = ""
 
-    def on_llm_start(self, *args, **kwargs):
-        self.message_box = st.empty()
+st.set_page_config(
+    page_title="QuizGPT",
+    page_icon="⁉",
+)
 
-    def on_llm_end(self, *args, **kwargs):
-        save_message(self.message, "ai")
-
-    def on_llm_new_token(self, token: str, *args, **kwargs):
-        self.message += token
-        self.message_box.markdown(self.message)
-
+st.title("QuizGPT")
+st.sidebar.markdown("""
+[💻Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)  
+[📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/master/app.py)
+        
+        """)
 
 api_key = st.sidebar.text_input(
     "Put your OpenAI API Key here", type="password")
 
-memory_llm = None
-
 if api_key:
     llm = ChatOpenAI(
-        model_name="gpt-3.5-turbo",
         temperature=0.1,
-        api_key=api_key,
+        model="gpt-3.5-turbo-0125",
         streaming=True,
-        callbacks=[
-            ChatCallbackHandler(),
-        ]
-    )
-    memory_llm = ChatOpenAI(
-        model_name="gpt-3.5-turbo",
-        temperature=0.1,
         api_key=api_key,
+        callbacks=[StreamingStdOutCallbackHandler()],
+    ).bind(
+        function_call={"name": "create_quiz"},
+        functions=[function],
     )
-    memory = ConversationSummaryBufferMemory(
-        llm=memory_llm,
-        max_token_limit=120,
-        memory_key="chat_history",
-        return_messages=True,
+    difficulty = st.sidebar.selectbox(
+        "Choose the difficulty of Quiz.",
+        (
+            "Easy",
+            "Hard",
+        ),
     )
+
+    difficulty_prompt = ChatPromptTemplate.from_messages([
+        ("system",
+         """
+        You are a learning expert who adjusts the difficulty of questions. You are given 10 questions and need to adjust them according to the following conditions 
+        1. the questions must be numbered from 1 to 10 from the top.2. if the difficulty level is Easy, the questions should be easy enough for elementary school students to answer.
+        3. if the difficulty level is hard, the questions should be hard enough that you need to memorize them all to solve them.
+        
+        difficulty: {difficulty}
+        """),
+    ])
+
+    difficulty_chain = difficulty_prompt | llm
 else:
     st.warning("Please enter your OpenAI API Key first!!")
 
 
-@st.cache_resource(show_spinner="Embedding file...")
-def embed_file(file):
+@st.cache_resource(show_spinner="Loading file...")
+def split_file(file):
     file_content = file.read()
-    files_dir = Path("./.cache/files")
-    os.makedirs(files_dir, exist_ok=True)
-    file_path = files_dir / file.name
+    file_dir = Path("./.cache/quiz_files/{file.name}")
+    os.makedirs(file_dir, exist_ok=True)
+    file_path = file_dir / file.name
     with open(file_path, "wb") as f:
         f.write(file_content)
-    embeddings_dir = Path("./.cache/embeddings")
-    os.makedirs(embeddings_dir, exist_ok=True)
-    cache_dir = LocalFileStore(str(embeddings_dir / file.name))
     splitter = CharacterTextSplitter.from_tiktoken_encoder(
         separator="\n",
         chunk_size=600,
@@ -81,112 +147,69 @@ def embed_file(file):
     )
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
-    embeddings = OpenAIEmbeddings(api_key=api_key)
-    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
-        embeddings, cache_dir
-    )
-    vectorstore = FAISS.from_documents(docs, cached_embeddings)
-    retriever = vectorstore.as_retriever()
-    return retriever
+    return docs
 
 
-def save_message(message, role):
-    st.session_state["messages"].append({"message": message, "role": role})
+@st.cache_data(show_spinner="Making quiz...")
+def run_quiz_chain(_docs, topic, difficulty):
+    chain = questions_prompt | llm
+    response = chain.invoke({"context": _docs})
+    response_json = json.loads(
+        response.additional_kwargs["function_call"]["arguments"])
+    return response_json
 
 
-def save_memory(input, output):
-    st.session_state["chat_history"].append({"input": input, "output": output})
+@st.cache_data(show_spinner="Searching Wikipedia...")
+def wiki_search(term):
+    retriever = WikipediaRetriever(top_k_results=5)
+    docs = retriever.get_relevant_documents(term)
+    return docs
 
-
-def send_message(message, role, save=True):
-    with st.chat_message(role):
-        st.markdown(message)
-    if save:
-        save_message(message, role)
-
-
-def paint_history():
-    for message in st.session_state["messages"]:
-        send_message(
-            message["message"],
-            message["role"],
-            save=False,
-        )
-
-
-def restore_memory():
-    for history in st.session_state["chat_history"]:
-        memory.save_context(
-            {"input": history["input"]},
-            {"output": history["output"]}
-        )
-
-
-def format_docs(docs):
-    return "\n\n".join(document.page_content for document in docs)
-
-
-def load_memory(_):
-    return memory.load_memory_variables({})["chat_history"]
-
-
-def invoke_chain(message):
-    result = chain.invoke(message)
-    save_memory(message, result.content)
-
-
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system",
-         """
-        Answer the question using ONLY the following context. If you don't know the answer just say you don't know. DON'T make anything up.
-        Context: {context}
-        """
-         ),
-        MessagesPlaceholder(variable_name="chat_history"),
-        ("human", "{question}")
-    ]
-)
-
-st.title("DocumentGPT")
-
-st.markdown("""
-            Welcome!
-            
-            Use this chatbot to ask questions to an AI about your files!
-
-            Upload your files on the sidebar.
-            """
-            )
 
 with st.sidebar:
-    st.markdown("""
-        [💻Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)  
-        [📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/master/app.py)
-                
-                """)
-    file = st.file_uploader("Upload a .txt .pdf or .docx file", type=[
-                            "pdf", "txt", "docx"])
-
-if file and api_key:
-    retriever = embed_file(file)
-    send_message("I'm ready! Ask away!", "ai", save=False)
-    restore_memory()
-    paint_history()
-    message = st.chat_input("Ask anything about your file...")
-    if message:
-        send_message(message, "human")
-        chain = (
-            {
-                "context": retriever | RunnableLambda(format_docs),
-                "chat_history": load_memory,
-                "question": RunnablePassthrough(),
-            }
-            | prompt
-            | llm
+    docs = None
+    topic = None
+    choice = st.selectbox(
+        "Choose what you want to use.",
+        (
+            "File",
+            "Wikipedia Article",
+        ),
+    )
+    if choice == "File":
+        file = st.file_uploader(
+            "Upload a .docx, .txt, .pdf or .pdf file",
+            type=["pdf", "txt", "docx"],
         )
-        with st.chat_message("ai"):
-            invoke_chain(message)
+        if file:
+            docs = split_file(file)
+    else:
+        topic = st.text_input("Search Wikipedia...")
+        if topic:
+            docs = wiki_search(topic)
+
+if not docs and api_key:
+    st.markdown(
+        """
+    Welcome to QuizGPT.
+
+    I will make a quiz from Wikipedia articles or files you upload to test your knowledge and help you study.
+
+    Get started by uploading a file or searching on Wikipedia in the sidebar.
+        """
+    )
 else:
-    st.session_state["messages"] = []
-    st.session_state["chat_history"] = []
+    response = run_quiz_chain(docs, topic if topic else file.name, difficulty)
+    with st.form("questions_form"):
+        for question in response["questions"]:
+            st.write(question["question"])
+            value = st.radio(
+                "Select an option.",
+                [answer["answer"]for answer in question["answers"]],
+                index=None,
+            )
+            if ({"answer": value, "correct": True} in question["answers"]):
+                st.success("Correct!")
+            elif value is not None:
+                st.error("Wrong")
+        button = st.form_submit_button()
