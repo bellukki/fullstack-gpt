@@ -252,7 +252,7 @@ unstructured==0.13.2
 unstructured-client==0.18.0
 unstructured-inference==0.6.6
 unstructured.pytesseract==0.3.12
-urllib3==1.26.16
+urllib3
 uvicorn==0.23.2
 validators==0.22.0
 wasabi==1.1.2
