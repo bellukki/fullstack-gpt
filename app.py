@@ -1,192 +1,254 @@
-import streamlit as st
-import os
-from pathlib import Path
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_community.document_loaders import UnstructuredFileLoader
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain.embeddings import CacheBackedEmbeddings
-from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
-from langchain.storage import LocalFileStore
-from langchain.text_splitter import CharacterTextSplitter
+import asyncio
+import sys
+from langchain_community.document_loaders import SitemapLoader
+from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores.faiss import FAISS
+from langchain_openai import OpenAIEmbeddings
 from langchain_openai import ChatOpenAI
-from langchain.callbacks.base import BaseCallbackHandler
-from langchain.memory import ConversationSummaryBufferMemory
+from langchain.prompts import ChatPromptTemplate
+import streamlit as st
+from langchain.callbacks import StreamingStdOutCallbackHandler
 
-st.set_page_config(
-    page_title="DocumentGPT",
-    page_icon="📃"
+if "win32" in sys.platform:
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    cmds = [["C:Windows/system32/HOSTNAME.EXE"]]
+else:
+    cmds = [
+        ["du", "-sh", "/Users/fredrik/Desktop"],
+        ["du", "-sh", "/Users/fredrik"],
+        ["du", "-sh", "/Users/fredrik/Pictures"]
+    ]
+
+answers_prompt = ChatPromptTemplate.from_template("""
+    Using ONLY the following context answer the user's question.
+    If you can't just say you don't know, don't make anything up.
+                                                                             
+    Then, give a score to the answer between 0 and 5.
+    The score should be high if the answer is related to the user's question, and low otherwise.
+                                                  
+    If there is no relevant content, the score is 0.
+    Always provide scores with your answers
+    Context: {context}
+
+    Examples:
+
+    Question: How far away is the moon?
+    Answer: The moon is 384,400 km away.
+    Score: 5
+
+    Question: How far away is the sun?
+    Answer: I don't know
+    Score: 0
+
+    Your turn!
+    Question: {question}
+""")
+
+
+def get_answers(inputs):
+    docs = inputs['docs']
+    question = inputs['question']
+    answers_chain = answers_prompt | llm
+    return {
+        "question": question,
+        "answers":
+        [
+            {
+                "answer": answers_chain.invoke(
+                    {"question": question, "context": doc.page_content}
+                ).content,
+                "source": doc.metadata["source"],
+                "date": doc.metadata["lastmod"]
+            }
+            for doc in docs
+        ],
+    }
+
+
+choose_prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            Use ONLY the following pre-existing answers to answer the user's question.
+
+            Use the answers that have the highest score (more helpful) and favor the most recent ones.
+
+            Return the sources of the answers as they are, do not change them.
+
+            Answers: {answers}
+            """,
+        ),
+        ("human", "{question}"),
+    ]
 )
 
 
-class ChatCallbackHandler(BaseCallbackHandler):
-    message = ""
+def choose_answer(inputs):
+    answers = inputs["answers"]
+    question = inputs["question"]
+    choose_chain = choose_prompt | llm
+    condensed = "\n\n".join(
+        f"{answer['answer']}\nSource:{answer['source']}\nDate:{answer['date']}\n"for answer in answers)
+    return choose_chain.invoke({
+        "question": question,
+        "answers": condensed
+    })
 
-    def on_llm_start(self, *args, **kwargs):
-        self.message_box = st.empty()
 
-    def on_llm_end(self, *args, **kwargs):
-        save_message(self.message, "ai")
+def parse_page(soup):
+    header = soup.find("header")
+    footer = soup.find("footer")
+    if header:
+        header.decompose()
+    if footer:
+        footer.decompose()
+    return (
+        str(soup.get_text())
+        .replace("\n", " ")
+        .replace("\xa0", " ")
+        .replace("closeSearch Submit Blog", "")
+    )
 
-    def on_llm_new_token(self, token: str, *args, **kwargs):
-        self.message += token
-        self.message_box.markdown(self.message)
 
+def parse_cfpage(soup, keywords):
+    text = (
+        str(soup.get_text())
+        .replace("\n", " ")
+        .replace("\xa0", " ")
+        .replace("closeSearch Submit Blog", "")
+    )
+    if any(keyword in text for keyword in keywords):
+        return text
+    return None
+
+
+@st.cache_resource(show_spinner="Loading Website...")
+def load_website(url):
+    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=1000,
+        chunk_overlap=200
+    )
+    loader = SitemapLoader(
+        url,
+        parsing_function=parse_page
+    )
+    loader.requests_per_second = 2
+    docs = loader.load_and_split(text_splitter=splitter)
+    vector_store = FAISS.from_documents(docs, OpenAIEmbeddings())
+    return vector_store.as_retriever()
+
+
+@st.cache_resource(show_spinner="Loading Website...")
+def load_cfwebsite(url, keywords):
+    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=1000,
+        chunk_overlap=200
+    )
+    loader = SitemapLoader(
+        url,
+        parsing_function=lambda soup: parse_cfpage(soup, keywords)
+    )
+    loader.requests_per_second = 2
+    docs = loader.load_and_split(text_splitter=splitter)
+    filtered_docs = [doc for doc in docs if doc is not None]
+    vector_store = FAISS.from_documents(filtered_docs, OpenAIEmbeddings())
+    return vector_store.as_retriever()
+
+
+st.set_page_config(
+    page_title="SiteGPT",
+    page_icon="🖥️",
+)
+
+
+st.title("SiteGPT")
+st.sidebar.markdown("""
+[💻Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)  
+[📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/QuizGPT-Turbo/app.py)
+        """)
+
+url_cloudflare = "https://developers.cloudflare.com/sitemap.xml"
+url_openAI = "https://openai.com/sitemap.xml"
+keywords = ["AI Gateway", "Cloudflare Vectorize", "Workers AI"]
 
 api_key = st.sidebar.text_input(
     "Put your OpenAI API Key here", type="password")
-
-memory_llm = None
 
 if api_key:
     llm = ChatOpenAI(
         model_name="gpt-3.5-turbo",
         temperature=0.1,
         api_key=api_key,
-        streaming=True,
-        callbacks=[
-            ChatCallbackHandler(),
-        ]
+        callbacks=[StreamingStdOutCallbackHandler()],
     )
-    memory_llm = ChatOpenAI(
-        model_name="gpt-3.5-turbo",
-        temperature=0.1,
-        api_key=api_key,
+    st.markdown(
+        """
+        Ask questions about the content of a website.
+                
+        Start by writing the URL of the website on the sidebar.
+
+        Or select the SITE what you want to find.
+
+        If you are forced to disconnect, please wait 3 seconds and select again.
+    """
     )
-    memory = ConversationSummaryBufferMemory(
-        llm=memory_llm,
-        max_token_limit=120,
-        memory_key="chat_history",
-        return_messages=True,
-    )
+    with st.sidebar:
+        choice = st.selectbox(
+            "Choose what you want to find documentation.",
+            (
+                "Search for what you want",
+                "Cloudflare",
+                "OpenAI",
+            ),
+        )
+        if choice == "Cloudflare":
+            url = url_cloudflare
+        elif choice == "OpenAI":
+            url = url_openAI
+        else:
+            url = st.text_input(
+                "Write down a URL",
+                placeholder="https://example.com/sitemap.xml",
+            )
+    if url:
+        if ".xml" not in url:
+            with st.sidebar:
+                st.error("Plaese write down a Sitemap URL")
+        elif url == url_cloudflare:
+            retriever = load_cfwebsite(url, keywords)
+            query = st.text_input(
+                """
+                Ask a question to the Cloudflare's each one of these products:
+                - AI Gateway
+                - Cloudflare Vectorize
+                - Workers AI
+                """)
+            if query:
+                chain = (
+                    {
+                        "docs": retriever,
+                        "question": RunnablePassthrough(),
+                    }
+                    | RunnableLambda(get_answers)
+                    | RunnableLambda(choose_answer)
+                )
+                result = chain.invoke(query)
+                st.markdown(result.content.replace("$", "\$"))
+        else:
+            retriever = load_website(url)
+            query = st.text_input("Ask a question to the website.")
+            if query:
+                chain = (
+                    {
+                        "docs": retriever,
+                        "question": RunnablePassthrough(),
+                    }
+                    | RunnableLambda(get_answers)
+                    | RunnableLambda(choose_answer)
+                )
+                result = chain.invoke(query)
+                st.markdown(result.content.replace("$", "\$"))
 else:
     st.warning("Please enter your OpenAI API Key first!!")
-
-
-@st.cache_resource(show_spinner="Embedding file...")
-def embed_file(file):
-    file_content = file.read()
-    files_dir = Path("./.cache/files")
-    os.makedirs(files_dir, exist_ok=True)
-    file_path = files_dir / file.name
-    with open(file_path, "wb") as f:
-        f.write(file_content)
-    embeddings_dir = Path("./.cache/embeddings")
-    os.makedirs(embeddings_dir, exist_ok=True)
-    cache_dir = LocalFileStore(str(embeddings_dir / file.name))
-    splitter = CharacterTextSplitter.from_tiktoken_encoder(
-        separator="\n",
-        chunk_size=600,
-        chunk_overlap=100,
-    )
-    loader = UnstructuredFileLoader(file_path)
-    docs = loader.load_and_split(text_splitter=splitter)
-    embeddings = OpenAIEmbeddings(api_key=api_key)
-    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
-        embeddings, cache_dir
-    )
-    vectorstore = FAISS.from_documents(docs, cached_embeddings)
-    retriever = vectorstore.as_retriever()
-    return retriever
-
-
-def save_message(message, role):
-    st.session_state["messages"].append({"message": message, "role": role})
-
-
-def save_memory(input, output):
-    st.session_state["chat_history"].append({"input": input, "output": output})
-
-
-def send_message(message, role, save=True):
-    with st.chat_message(role):
-        st.markdown(message)
-    if save:
-        save_message(message, role)
-
-
-def paint_history():
-    for message in st.session_state["messages"]:
-        send_message(
-            message["message"],
-            message["role"],
-            save=False,
-        )
-
-
-def restore_memory():
-    for history in st.session_state["chat_history"]:
-        memory.save_context(
-            {"input": history["input"]},
-            {"output": history["output"]}
-        )
-
-
-def format_docs(docs):
-    return "\n\n".join(document.page_content for document in docs)
-
-
-def load_memory(_):
-    return memory.load_memory_variables({})["chat_history"]
-
-
-def invoke_chain(message):
-    result = chain.invoke(message)
-    save_memory(message, result.content)
-
-
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system",
-         """
-        Answer the question using ONLY the following context. If you don't know the answer just say you don't know. DON'T make anything up.
-        Context: {context}
-        """
-         ),
-        MessagesPlaceholder(variable_name="chat_history"),
-        ("human", "{question}")
-    ]
-)
-
-st.title("DocumentGPT")
-
-st.markdown("""
-            Welcome!
-            
-            Use this chatbot to ask questions to an AI about your files!
-
-            Upload your files on the sidebar.
-            """
-            )
-
-with st.sidebar:
-    st.markdown("""
-        [💻Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)  
-        [📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/master/app.py)
-                
-                """)
-    file = st.file_uploader("Upload a .txt .pdf or .docx file", type=[
-                            "pdf", "txt", "docx"])
-
-if file and api_key:
-    retriever = embed_file(file)
-    send_message("I'm ready! Ask away!", "ai", save=False)
-    restore_memory()
-    paint_history()
-    message = st.chat_input("Ask anything about your file...")
-    if message:
-        send_message(message, "human")
-        chain = (
-            {
-                "context": retriever | RunnableLambda(format_docs),
-                "chat_history": load_memory,
-                "question": RunnablePassthrough(),
-            }
-            | prompt
-            | llm
-        )
-        with st.chat_message("ai"):
-            invoke_chain(message)
-else:
-    st.session_state["messages"] = []
-    st.session_state["chat_history"] = []
