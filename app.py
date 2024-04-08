@@ -9,12 +9,78 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.callbacks import StreamingStdOutCallbackHandler
 
+function = {
+    "name": "create_quiz",
+    "description": "function that takes a list of questions and answers and returns a quiz",
+    "parameters": {
+            "type": "object",
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "question": {
+                                "type": "string",
+                            },
+                            "answers": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "answer": {
+                                            "type": "string",
+                                        },
+                                        "correct": {
+                                            "type": "boolean",
+                                        },
+                                    },
+                                    "required": ["answer", "correct"],
+                                },
+                            },
+                        },
+                        "required": ["question", "answers"],
+                    },
+                },
+            },
+        "required": ["questions"],
+    },
+}
 
-questions_prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """
+st.set_page_config(
+    page_title="QuizGPT",
+    page_icon="⁉",
+)
+
+st.title("QuizGPT")
+st.sidebar.markdown("""
+[💻Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)  
+[📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/QuizGPT-Turbo/app.py)
+        
+        """)
+api_key = st.sidebar.text_input(
+    "Put your OpenAI API Key here", type="password")
+
+difficulty = st.sidebar.selectbox(
+    "Choose the difficulty of Quiz.", ["Easy", "Hard"])
+
+if api_key:
+    llm = ChatOpenAI(
+        temperature=0.1,
+        model="gpt-3.5-turbo-0125",
+        streaming=True,
+        api_key=api_key,
+        callbacks=[StreamingStdOutCallbackHandler()],
+    ).bind(
+        function_call={"name": "create_quiz"},
+        functions=[function],
+    )
+
+    questions_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """
     You are a helpful assistant that is role playing as a teacher.
          
     Based ONLY on the following context make 10 (TEN) questions to test the user's knowledge about the text.
@@ -34,100 +100,22 @@ questions_prompt = ChatPromptTemplate.from_messages(
          
     Question: Who was Julius Caesar?
     Answers: A Roman Emperor|Painter|Actor|Model
-         
+
+    if the difficulty level is Easy, the questions should be easy enough for elementary school students to answer.
+
+    if the difficulty level is hard, the questions should be hard enough that you need to memorize them all to solve them.
+    
+    difficulty: {difficulty}
+
     Your turn!
          
     Context: {context}
                 """
-        )
-    ]
-)
-
-function = {
-    "name": "create_quiz",
-    "description": "function that takes a list of questions and answers and returns a quiz",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "questions": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "question": {
-                            "type": "string",
-                        },
-                        "answers": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "answer": {
-                                        "type": "string",
-                                    },
-                                    "correct": {
-                                        "type": "boolean",
-                                    },
-                                },
-                                "required": ["answer", "correct"],
-                            },
-                        },
-                    },
-                    "required": ["question", "answers"],
-                },
-            },
-        },
-        "required": ["questions"],
-    },
-}
-
-
-st.set_page_config(
-    page_title="QuizGPT",
-    page_icon="⁉",
-)
-
-st.title("QuizGPT")
-st.sidebar.markdown("""
-[💻Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)  
-[📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/master/app.py)
-        
-        """)
-
-api_key = st.sidebar.text_input(
-    "Put your OpenAI API Key here", type="password")
-
-if api_key:
-    llm = ChatOpenAI(
-        temperature=0.1,
-        model="gpt-3.5-turbo-0125",
-        streaming=True,
-        api_key=api_key,
-        callbacks=[StreamingStdOutCallbackHandler()],
-    ).bind(
-        function_call={"name": "create_quiz"},
-        functions=[function],
-    )
-    difficulty = st.sidebar.selectbox(
-        "Choose the difficulty of Quiz.",
-        (
-            "Easy",
-            "Hard",
-        ),
+            )
+        ]
     )
 
-    difficulty_prompt = ChatPromptTemplate.from_messages([
-        ("system",
-         """
-        You are a learning expert who adjusts the difficulty of questions. You are given 10 questions and need to adjust them according to the following conditions 
-        1. the questions must be numbered from 1 to 10 from the top.2. if the difficulty level is Easy, the questions should be easy enough for elementary school students to answer.
-        3. if the difficulty level is hard, the questions should be hard enough that you need to memorize them all to solve them.
-        
-        difficulty: {difficulty}
-        """),
-    ])
-
-    difficulty_chain = difficulty_prompt | llm
+    final_chain = questions_prompt | llm
 else:
     st.warning("Please enter your OpenAI API Key first!!")
 
@@ -135,7 +123,7 @@ else:
 @st.cache_resource(show_spinner="Loading file...")
 def split_file(file):
     file_content = file.read()
-    file_dir = Path("./.cache/quiz_files/{file.name}")
+    file_dir = Path(f"./.cache/quiz_files/{file.name}")
     os.makedirs(file_dir, exist_ok=True)
     file_path = file_dir / file.name
     with open(file_path, "wb") as f:
@@ -152,8 +140,8 @@ def split_file(file):
 
 @st.cache_data(show_spinner="Making quiz...")
 def run_quiz_chain(_docs, topic, difficulty):
-    chain = questions_prompt | llm
-    response = chain.invoke({"context": _docs})
+    response = final_chain.invoke(
+        {"context": _docs, "difficulty": difficulty})
     response_json = json.loads(
         response.additional_kwargs["function_call"]["arguments"])
     return response_json
@@ -188,7 +176,7 @@ with st.sidebar:
         if topic:
             docs = wiki_search(topic)
 
-if not docs and api_key:
+if not docs:
     st.markdown(
         """
     Welcome to QuizGPT.
@@ -200,6 +188,8 @@ if not docs and api_key:
     )
 else:
     response = run_quiz_chain(docs, topic if topic else file.name, difficulty)
+    correct_answers_count = 0
+    total_questions = len(response["questions"])
     with st.form("questions_form"):
         for question in response["questions"]:
             st.write(question["question"])
@@ -208,8 +198,11 @@ else:
                 [answer["answer"]for answer in question["answers"]],
                 index=None,
             )
-            if ({"answer": value, "correct": True} in question["answers"]):
+            if any(answer["correct"] and answer["answer"] == value for answer in question["answers"]):
                 st.success("Correct!")
+                correct_answers_count += 1
             elif value is not None:
                 st.error("Wrong")
-        button = st.form_submit_button()
+        button = st.form_submit_button("Submit Answers")
+        if button and correct_answers_count == total_questions:
+            st.balloons()
