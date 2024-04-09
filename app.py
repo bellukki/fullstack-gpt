@@ -10,15 +10,15 @@ from langchain.prompts import ChatPromptTemplate
 import streamlit as st
 from langchain.callbacks import StreamingStdOutCallbackHandler
 
-if "win32" in sys.platform:
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    cmds = [["C:Windows/system32/HOSTNAME.EXE"]]
-else:
-    cmds = [
-        ["du", "-sh", "/Users/fredrik/Desktop"],
-        ["du", "-sh", "/Users/fredrik"],
-        ["du", "-sh", "/Users/fredrik/Pictures"]
-    ]
+# if "win32" in sys.platform:
+#     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+#     cmds = [["C:Windows/system32/HOSTNAME.EXE"]]
+# else:
+#     cmds = [
+#         ["du", "-sh", "/Users/fredrik/Desktop"],
+#         ["du", "-sh", "/Users/fredrik"],
+#         ["du", "-sh", "/Users/fredrik/Pictures"]
+#     ]
 
 answers_prompt = ChatPromptTemplate.from_template("""
     Using ONLY the following context answer the user's question.
