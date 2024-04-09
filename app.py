@@ -1,14 +1,18 @@
-import asyncio
-import sys
+# import asyncio
+# import sys
+import os
+import hashlib
 from langchain_community.document_loaders import SitemapLoader
 from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores.faiss import FAISS
 from langchain_openai import OpenAIEmbeddings
+from langchain.embeddings import CacheBackedEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 import streamlit as st
 from langchain.callbacks import StreamingStdOutCallbackHandler
+from langchain.storage import LocalFileStore
 
 # if "win32" in sys.platform:
 #     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -23,10 +27,12 @@ from langchain.callbacks import StreamingStdOutCallbackHandler
 answers_prompt = ChatPromptTemplate.from_template("""
     Using ONLY the following context answer the user's question.
     If you can't just say you don't know, don't make anything up.
-                                                                             
+
+    If you don't know the exact question, tell me something as close as possible that includes the words of the question I asked.
+                                                  
     Then, give a score to the answer between 0 and 5.
     The score should be high if the answer is related to the user's question, and low otherwise.
-                                                  
+
     If there is no relevant content, the score is 0.
     Always provide scores with your answers
     Context: {context}
@@ -63,7 +69,6 @@ url_openAI = "https://openai.com/sitemap.xml"
 
 api_key = st.sidebar.text_input(
     "Put your OpenAI API Key here", type="password")
-
 if api_key:
     llm = ChatOpenAI(
         model_name="gpt-3.5-turbo",
@@ -80,8 +85,8 @@ if api_key:
         Or select the SITE what you want to find.
 
         If you are forced to disconnect, please wait 3 seconds and select again.
-    """
-    )
+    """)
+
 else:
     st.warning("Please enter your OpenAI API Key first!!")
 
@@ -148,7 +153,7 @@ def parse_page(soup):
         str(soup.get_text())
         .replace("\n", " ")
         .replace("\xa0", " ")
-        .replace("closeSearch Submit Blog", "")
+        .replace("CloseSearch Submit Blog", "")
     )
 
 
@@ -158,36 +163,29 @@ def load_website(url, api_key):
         chunk_size=1000,
         chunk_overlap=200
     )
-    loader = SitemapLoader(
-        url,
-        parsing_function=parse_page
-    )
+    if url == url_cloudflare:
+        loader = SitemapLoader(
+            url,
+            filter_urls=[
+                r"^(.*\/(workers-ai|vectorize|ai-gateway)\/).*",
+            ],
+            parsing_function=parse_page
+        )
+    else:
+        loader = SitemapLoader(
+            url,
+            parsing_function=parse_page
+        )
     loader.requests_per_second = 2
     docs = loader.load_and_split(text_splitter=splitter)
-    vector_store = FAISS.from_documents(
-        docs, OpenAIEmbeddings(api_key=api_key))
-    return vector_store.as_retriever()
-
-
-@st.cache_resource(show_spinner="Loading Website...")
-def load_cfwebsite(url, api_key):
-    splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        chunk_size=1000,
-        chunk_overlap=200
+    path_url = hashlib.md5(url.encode('utf-8')).hexdigest()
+    cache_path = f"./.cache/embeddings/site/{path_url}"
+    os.makedirs(cache_path, exist_ok=True)
+    cache_dir = LocalFileStore(cache_path)
+    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(
+        OpenAIEmbeddings(api_key=api_key), cache_dir
     )
-    loader = SitemapLoader(
-        url,
-        filter_urls=[
-            r"^(.*\/workers-ai\/).*",
-            r"^(.*\/vectorize\/).*",
-            r"^(.*\/ai-gateway\/).*",
-        ],
-        parsing_function=parse_page
-    )
-    loader.requests_per_second = 2
-    docs = loader.load_and_split(text_splitter=splitter)
-    vector_store = FAISS.from_documents(
-        docs, OpenAIEmbeddings(api_key=api_key))
+    vector_store = FAISS.from_documents(docs, cached_embeddings)
     return vector_store.as_retriever()
 
 
@@ -212,30 +210,18 @@ with st.sidebar:
 if url:
     if ".xml" not in url:
         with st.sidebar:
-            st.error("Plaese write down a Sitemap URL")
-    elif url == url_cloudflare:
-        retriever = load_cfwebsite(url, api_key)
-        query = st.text_input(
-            """
-            Ask a question to the Cloudflare's each one of these products:
-            - AI Gateway
-            - Cloudflare Vectorize
-            - Workers AI
-            """)
-        if query:
-            chain = (
-                {
-                    "docs": retriever,
-                    "question": RunnablePassthrough(),
-                }
-                | RunnableLambda(get_answers)
-                | RunnableLambda(choose_answer)
-            )
-            result = chain.invoke(query)
-            st.markdown(result.content.replace("$", "\$"))
+            st.error("Please write down a Sitemap URL")
     else:
         retriever = load_website(url, api_key)
-        query = st.text_input("Ask a question to the website.")
+        if url == url_cloudflare:
+            query = st.text_input("""
+        Ask a question about the following products of Cloudflare:
+        AI Gateway, Cloudflare Vectorize, Workers AI
+                                  """)
+        else:
+            query = st.text_input(
+                "Ask a question to the OpenAI website.")
+        st.session_state.query = query
         if query:
             chain = (
                 {

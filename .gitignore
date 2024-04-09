@@ -9,4 +9,5 @@ files/
 .cache/private_embeddings
 .cache/private_files
 .cache/quiz_files
+.cache/embeddings
 falcon.bin
