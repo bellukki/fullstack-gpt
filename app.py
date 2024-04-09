@@ -163,7 +163,7 @@ def load_website(url, api_key):
         chunk_size=1000,
         chunk_overlap=200
     )
-    if url == url_cloudflare:
+    if url == url_cloudflare or url == "https://developers.cloudflare.com/sitemap.xml":
         loader = SitemapLoader(
             url,
             filter_urls=[
@@ -213,7 +213,7 @@ if url:
             st.error("Please write down a Sitemap URL")
     else:
         retriever = load_website(url, api_key)
-        if url == url_cloudflare | "https://developers.cloudflare.com/sitemap.xml":
+        if url == url_cloudflare or url == "https://developers.cloudflare.com/sitemap.xml":
             query = st.text_input("""
         Ask a question about the following products of Cloudflare:
         AI Gateway, Cloudflare Vectorize, Workers AI
