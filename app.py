@@ -11,6 +11,7 @@ from langchain.embeddings import CacheBackedEmbeddings
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 import streamlit as st
+from streamlit.runtime.legacy_caching import clear_cache
 from langchain.callbacks import StreamingStdOutCallbackHandler
 from langchain.storage import LocalFileStore
 
@@ -207,6 +208,11 @@ with st.sidebar:
             "Write down a URL",
             placeholder="https://example.com/sitemap.xml",
         )
+
+if st.sidebar.button("Refresh cache"):
+    clear_cache()
+    st.experimental_rerun()
+
 if url:
     if ".xml" not in url:
         with st.sidebar:
