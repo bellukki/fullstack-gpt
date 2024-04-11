@@ -11,3 +11,4 @@ files/
 .cache/quiz_files
 .cache/embeddings
 falcon.bin
+movies.sqlite
