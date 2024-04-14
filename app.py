@@ -199,7 +199,7 @@ st.set_page_config(
 
 st.sidebar.markdown("""
 [💻Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)  
-[📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/researchGPT/app.py)
+[📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/ResearchGPT/app.py)
         """)
 api_key = st.sidebar.text_input(
     "Put your OpenAI API Key here", type="password")
