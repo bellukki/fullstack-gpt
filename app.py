@@ -7,6 +7,7 @@ import openai as client
 import time
 import json
 import datetime
+import os
 
 
 def get_keyword_duck(inputs):
@@ -44,8 +45,9 @@ def research_overview(inputs):
 
 def save_to_file(inputs):
     data = inputs["data"]
-    with open(f"search_result.txt", "w") as f:
-        f.write(data)
+    mode = 'a' if os.path.exists("search_result.txt") else 'w'
+    with open(f"search_result.txt", mode, encoding="utf-8") as f:
+        f.write(data + '\n')
     return f"Information saved in result.txt file."
 
 
@@ -189,36 +191,48 @@ def submit_tool_outputs(run_id, thread_id):
 
 
 st.set_page_config(
-    page_title="ResearchGPT",
-    page_icon="🕵️‍♂️",
+    page_title="Eldrich Research Portal",
+    page_icon="🌌",
 )
 
 
 st.sidebar.markdown("""
-[💻Github repo &rarr;](https://github.com/bellukki/fullstack-gpt)  
-[📜Code of app &rarr;](https://github.com/bellukki/fullstack-gpt/blob/ResearchGPT/app.py)
-        """)
+<div style='background-color: #333; padding: 20px; border-radius: 5px; margin-top: 20px;'>
+    <a href="https://github.com/bellukki/fullstack-gpt" style="color: #f8f8f8; font-size: 18px; text-decoration: none;">🚪 Gateway to the GitHub Abyss &rarr;</a><br>
+    <a href="https://github.com/bellukki/fullstack-gpt/blob/ResearchGPT/app.py" style="color: #f8f8f8; font-size: 18px; text-decoration: none;">📜 Tome of Ancient Code &rarr;</a>
+</div>
+""", unsafe_allow_html=True)
 api_key = st.sidebar.text_input(
-    "Put your OpenAI API Key here", type="password")
+    "Whisper your OpenAI API Key here", type="password")
 if api_key == "":
-    st.warning("Please enter your OpenAI API Key first!!")
+    st.markdown(
+        """
+        <div style='background-color: #464646; padding: 10px; border-radius: 10px'>
+            <p style='color: white; text-align: center;'>
+                Whisper your OpenAI API Key to awaken the spirits of knowledge
+            </p>
+        </div>
+        """, unsafe_allow_html=True
+    )
 else:
     client = client.Client(api_key=api_key)
-    if assistant_id == "":
+    if "assistant_initialized" not in st.session_state:
+        st.session_state.assistant_initialized = False
+
+    if not st.session_state.assistant_initialized:
         my_assistants = client.beta.assistants.list(
             order="desc",
             limit="10",
         )
+        assistant_found = False
         for assistant in my_assistants.data:
             if assistant.name == "Research AI Assistant":
-                st.write(f"Found assistant: {assistant.name}, {assistant.id}")
-                assistant_id = assistant.id
-                assistant_name = assistant.name
-                st.session_state["assistant_id"] = assistant_id
-                st.session_state["assistant_name"] = assistant_name
+                st.session_state["assistant_id"] = assistant.id
+                st.session_state["assistant_name"] = assistant.name
+                assistant_found = True
                 break
 
-        if assistant_id == "":
+        if not assistant_found:
             assistant = client.beta.assistants.create(
                 name="Research AI Assistant",
                 instructions="""
@@ -238,18 +252,41 @@ else:
             )
             st.session_state["assistant_id"] = assistant.id
             st.session_state["assistant_name"] = assistant.name
-            assistant_id = assistant.id
-            assistant_name = assistant.name
-            st.write(f"Created a new assistant! ID: {assistant_id}")
+
+        st.session_state.assistant_initialized = True
 
     st.markdown(
         """
-    # ResearchGPT
+        <style>
+        .title {
+            font-size:30px !important;
+            font-weight: bold;
+            color: #d4af37;
+            text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);
+        }
+        .main {
+            font-family: 'Garamond', serif;
+            font-size:22px;
+            color: #d4af37;
+            text-shadow: 1px 1px 4px rgba(158, 123, 181, 0.5);
+        }
+        .gate {
+            border-radius: 15px;
+            border: 1px solid #ccc;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-    Welcome to ResearchGPT.
+    st.markdown(
+        '<p class="title">🌌Eldritch Research Portal</p>', unsafe_allow_html=True
+    )
 
-    Enter keywords for the research results you want to find.
-    """
+    st.markdown("""
+        <img src="https://fly.storage.tigris.dev/pai-images/20834992a6104794ac5107bf6dd71984.jpeg" class="gate" alt="The Gate to Other Realms" width="300">
+        """, unsafe_allow_html=True)
+
+    st.markdown(
+        '<p class="main">Step through the veil. Enter the cryptic keywords to unveil the secrets that lay hidden in the shadowy depths of the digital ether.</p>', unsafe_allow_html=True
     )
 
     if run_id != "":
@@ -281,7 +318,7 @@ else:
         st.session_state["input"] = ""
         st.session_state["clear"] = False
 
-    keyword = st.text_input("Enter a research subject.",
+    keyword = st.text_input("Speak the name of the knowledge you seek.",
                             value=st.session_state.get("input", ""),
                             key="input",)
 
