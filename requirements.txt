@@ -43,10 +43,10 @@ Deprecated==1.2.14
 dill==0.3.7
 distro==1.9.0
 dnspython==2.4.2
-duckduckgo-search==3.8.5
+duckduckgo-search
 EbookLib==0.18
 effdet==0.4.1
-elastic-transport==8.4.0
+elastic-transport==8.10.0
 elasticsearch==8.9.0
 email-validator==2.0.0.post2
 emoji==2.8.0

@@ -4,12 +4,9 @@ from bs4 import BeautifulSoup
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
 import openai as client
-from dotenv import load_dotenv
 import time
 import json
 import datetime
-
-load_dotenv()
 
 
 def get_keyword_duck(inputs):
