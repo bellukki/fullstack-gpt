@@ -36,19 +36,18 @@ def research_overview(inputs):
                                  for element in soup.find_all(tags_to_search)])
         return text_content
     except requests.exceptions.HTTPError as e:
-        print(f"HTTP Error: {e.response.status_code}")
-        return None
+        return f"HTTP Error: {e.response.status_code}"
+    except requests.exceptions.ConnectionError:
+        return "Connection refused or dropped. Skipping this URL."
     except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-        return None
+        return f"Request failed: {e}"
 
 
 def save_to_file(inputs):
     data = inputs["data"]
-    mode = 'a' if os.path.exists("search_result.txt") else 'w'
-    with open(f"search_result.txt", mode, encoding="utf-8") as f:
+    with open(f"search_result.txt", "w", encoding="utf-8") as f:
         f.write(data + '\n')
-    return f"Information saved in result.txt file."
+    return f"Secrets saved in result.txt file."
 
 
 functions_map = {
